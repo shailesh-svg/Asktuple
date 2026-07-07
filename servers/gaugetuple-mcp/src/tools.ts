@@ -1,19 +1,30 @@
 import type { CardResult, ProposedAction } from "@asktuple/contract";
 
 /**
- * Thin Gaugetuple API client. Truth comes from Gaugetuple, never from model
- * text. Every read returns typed data or an `unavailable` card. Wire the real
- * endpoints where marked TODO; the shapes below match what the UI observed at
- * dev.gaugetuple.com so the shell can be built against them today.
+ * Gaugetuple API client. Endpoints below were captured live from
+ * dev.gaugetuple.com (a Next.js app; the API is same-origin under /evals and
+ * /authtuple). Truth comes from Gaugetuple, never from model text. Every read
+ * returns typed data or an `unavailable` card.
+ *
+ * Auth: the browser uses a session cookie. For a server-side gateway, set one of
+ *   GAUGETUPLE_API_TOKEN  (sent as Authorization: Bearer ...)
+ *   GAUGETUPLE_COOKIE     (sent as the Cookie header, copied from a logged-in session)
+ * Reads that require auth return an `unavailable` card when neither is set.
  */
 const BASE = process.env.GAUGETUPLE_API_BASE ?? "https://dev.gaugetuple.com";
 const TOKEN = process.env.GAUGETUPLE_API_TOKEN ?? "";
+const COOKIE = process.env.GAUGETUPLE_COOKIE ?? "";
+
+function authHeaders(): Record<string, string> {
+  const h: Record<string, string> = {};
+  if (TOKEN) h.authorization = `Bearer ${TOKEN}`;
+  if (COOKIE) h.cookie = COOKIE;
+  return h;
+}
 
 async function api<T>(path: string): Promise<T | null> {
   try {
-    const res = await fetch(`${BASE}${path}`, {
-      headers: TOKEN ? { authorization: `Bearer ${TOKEN}` } : {},
-    });
+    const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
     if (!res.ok) return null;
     return (await res.json()) as T;
   } catch {
@@ -21,20 +32,52 @@ async function api<T>(path: string): Promise<T | null> {
   }
 }
 
+/** Count helper. Gaugetuple list endpoints may return an array or {items,total}. */
+function count(data: any): number {
+  if (data == null) return 0;
+  if (typeof data.total === "number") return data.total;
+  if (Array.isArray(data)) return data.length;
+  if (Array.isArray(data.items)) return data.items.length;
+  if (Array.isArray(data.results)) return data.results.length;
+  return 0;
+}
+function rows(data: any): any[] {
+  if (Array.isArray(data)) return data;
+  return data?.items ?? data?.results ?? data?.data ?? [];
+}
+
 function unavailable(what: string): CardResult {
   return { card: "unavailable", payload: { what } };
+}
+
+/** Resolve the default project id (the dashboard scopes analytics by project). */
+export async function defaultProjectId(): Promise<string | null> {
+  const data = await api<any>("/evals/projects");
+  const list = rows(data);
+  return list[0]?.id ?? list[0]?.project_id ?? null;
 }
 
 // ---- Read tools -----------------------------------------------------------
 
 export async function getPlatformOverview(): Promise<CardResult> {
-  // TODO: replace with the real overview endpoint.
-  const data = await api<Record<string, number>>("/api/overview");
-  if (!data) return unavailable("platform overview");
+  const [golden, evaluation, linked, configs, jobs] = await Promise.all([
+    api<any>("/evals/dataset/list?type=golden&page=1&limit=1"),
+    api<any>("/evals/dataset/list?type=evaluation&page=1&limit=1"),
+    api<any>("/evals/dataset/list?type=linked&page=1&limit=1"),
+    api<any>("/evals/configs/list?page=1&limit=1"),
+    api<any>("/evals/eval_jobs/list?page=1&limit=1"),
+  ]);
+  if (!golden && !evaluation && !configs && !jobs) return unavailable("platform overview");
   return {
     card: "overview_kpis",
-    payload: data, // { goldenDatasets, evalDatasets, evalCriteria, successRate, totalEvaluations, totalRows, linkedDatasets }
-    suggestions: ["Why is success rate 83%?", "List my recent eval runs"],
+    payload: {
+      goldenDatasets: count(golden),
+      evalDatasets: count(evaluation),
+      linkedDatasets: count(linked),
+      evalCriteria: count(configs),
+      totalEvaluations: count(jobs),
+    },
+    suggestions: ["List my recent eval runs", "Why is the pass rate where it is?"],
   };
 }
 
@@ -43,51 +86,60 @@ export async function listEvalRuns(input: {
   datasetId?: string;
   limit?: number;
 }): Promise<CardResult> {
-  const q = new URLSearchParams();
-  if (input.evalType) q.set("evalType", input.evalType);
-  if (input.datasetId) q.set("datasetId", input.datasetId);
-  q.set("limit", String(input.limit ?? 20));
-  const data = await api<unknown[]>(`/api/eval-runs?${q}`);
+  const q = new URLSearchParams({ page: "1", limit: String(input.limit ?? 20) });
+  if (input.evalType) q.set("eval_type", input.evalType);
+  if (input.datasetId) q.set("dataset_id", input.datasetId);
+  const data = await api<any>(`/evals/eval_jobs/list?${q}`);
   if (!data) return unavailable("evaluation runs");
   return {
     card: "run_list",
-    payload: { runs: data },
+    payload: { runs: rows(data), total: count(data) },
     suggestions: ["Open the latest run", "Compare against last week"],
   };
 }
 
 export async function getEvalRun(input: { runId: string }): Promise<CardResult> {
-  const data = await api<unknown>(`/api/eval-runs/${encodeURIComponent(input.runId)}`);
+  // TODO confirm: single-run route is inferred as /evals/eval_jobs/{id}.
+  const data = await api<any>(`/evals/eval_jobs/${encodeURIComponent(input.runId)}`);
   if (!data) return unavailable(`run ${input.runId}`);
   return { card: "run_detail", payload: data };
 }
 
 export async function getScoreAnalytics(input: {
   window?: string;
-  evalType?: string;
+  projectId?: string;
 }): Promise<CardResult> {
-  const q = new URLSearchParams({ window: input.window ?? "30d" });
-  if (input.evalType) q.set("evalType", input.evalType);
-  const data = await api<unknown>(`/api/analytics?${q}`);
-  if (!data) return unavailable("score analytics");
-  return { card: "score_analytics", payload: data };
+  const days = (input.window ?? "30d").replace("d", "");
+  const pid = input.projectId ?? (await defaultProjectId());
+  if (!pid) return unavailable("a project to analyze");
+  const [trends, providers, breakdown] = await Promise.all([
+    api<any>(`/evals/dashboard/project-score-trends?project_id=${pid}&days=${days}`),
+    api<any>(`/evals/dashboard/project-provider-comparison?project_id=${pid}&days=${days}`),
+    api<any>(`/evals/dashboard/project-eval-type-breakdown?project_id=${pid}&days=${days}`),
+  ]);
+  if (!trends && !providers && !breakdown) return unavailable("score analytics");
+  return {
+    card: "score_analytics",
+    payload: { window: `${days}d`, projectId: pid, trends, providers, breakdown },
+  };
 }
 
 export async function listDatasets(input: { kind?: string }): Promise<CardResult> {
-  const q = input.kind ? `?kind=${encodeURIComponent(input.kind)}` : "";
-  const data = await api<unknown[]>(`/api/datasets${q}`);
+  const type = input.kind ?? "golden"; // golden | evaluation | linked
+  const data = await api<any>(`/evals/dataset/list?type=${encodeURIComponent(type)}&page=1&limit=200`);
   if (!data) return unavailable("datasets");
-  return { card: "dataset_list", payload: { datasets: data } };
+  return { card: "dataset_list", payload: { kind: type, datasets: rows(data), total: count(data) } };
 }
 
-export async function listPromptJobs(input: { status?: string }): Promise<CardResult> {
-  const q = input.status ? `?status=${encodeURIComponent(input.status)}` : "";
-  const data = await api<unknown[]>(`/api/prompt-jobs${q}`);
+export async function listPromptJobs(_input: { status?: string }): Promise<CardResult> {
+  const data = await api<any>(`/evals/prompt-competitions?limit=20&offset=0`);
   if (!data) return unavailable("prompt jobs");
-  return { card: "prompt_job_list", payload: { jobs: data } };
+  return { card: "prompt_job_list", payload: { jobs: rows(data), total: count(data) } };
 }
 
 // ---- Mutations. Return a ProposedAction. Never execute on call. -----------
+// On approval the host calls the endpoints marked TODO (not yet observed live;
+// trigger the New Evaluation Wizard / dataset create / export once to confirm).
 
 export function proposeEvaluation(input: {
   evalType: string;
@@ -99,7 +151,8 @@ export function proposeEvaluation(input: {
   const proposal: ProposedAction = {
     id: `prop_${Date.now()}`,
     product: "gaugetuple",
-    title: `Run a ${input.evalType} evaluation on dataset ${input.datasetId}`,
+    title: `Run a ${input.evalType} evaluation on dataset ${input.datasetId || "(pick one)"}`,
+    // TODO confirm: POST /evals/eval_jobs with this body.
     execute: { toolId: "gaugetuple.propose_evaluation", input },
     capability: "run:evaluation",
     effects: [
@@ -107,21 +160,19 @@ export function proposeEvaluation(input: {
       input.candidatePrompt
         ? "Compares the candidate prompt against the baseline (A/B regression check)."
         : "Scores the dataset against the linked golden baseline.",
-      "Writes a new entry to Run History.",
+      "Writes a new entry to Run History (/evals/eval_jobs).",
     ],
     broadcastChannel: `run:${Date.now()}`,
   };
   return { card: "proposal", payload: proposal };
 }
 
-export function proposeGoldenDataset(input: {
-  name: string;
-  sourceEntryIds: string[];
-}): CardResult {
+export function proposeGoldenDataset(input: { name: string; sourceEntryIds: string[] }): CardResult {
   const proposal: ProposedAction = {
     id: `prop_${Date.now()}`,
     product: "gaugetuple",
     title: `Create golden dataset "${input.name}"`,
+    // TODO confirm: POST /evals/dataset (type=golden) with these entries.
     execute: { toolId: "gaugetuple.propose_golden_dataset", input },
     capability: "write:golden_dataset",
     effects: [
@@ -137,6 +188,7 @@ export function proposeReportExport(input: { scope: string; window?: string }): 
     id: `prop_${Date.now()}`,
     product: "gaugetuple",
     title: `Export a PPT report for ${input.scope}`,
+    // TODO confirm: the dashboard "Export PPT" endpoint.
     execute: { toolId: "gaugetuple.propose_report_export", input },
     capability: "export:report",
     effects: [`Generates a client-ready PPT for ${input.scope} (${input.window ?? "30d"}).`],

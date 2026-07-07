@@ -46,7 +46,7 @@ export const GAUGETUPLE_TOOLS: ToolManifest[] = [
     kind: "read",
     capability: "read:analytics",
     summary: "Score trends, provider comparison, and eval-type breakdown over a window.",
-    input: { window: "string", evalType: "string" },
+    input: { window: "string", projectId: "string" },
     card: "score_analytics",
   },
   {

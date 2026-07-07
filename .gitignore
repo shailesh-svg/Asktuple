@@ -4,3 +4,8 @@ dist/
 .env.local
 .DS_Store
 *.log
+
+# we use pnpm; ignore npm lockfile and stray temp files
+package-lock.json
+pnpm-debug.log
+_tmp_*
