@@ -1,0 +1,13 @@
+{
+  "name": "asktuple",
+  "private": true,
+  "version": "0.1.0",
+  "description": "Asktuple. One natural-language door to Newtuple's internal products, starting with Gaugetuple.",
+  "packageManager": "pnpm@9.0.0",
+  "scripts": {
+    "dev": "pnpm --filter @asktuple/shell dev",
+    "dev:gaugetuple": "pnpm --filter @asktuple/gaugetuple-mcp dev",
+    "build": "pnpm -r build",
+    "typecheck": "pnpm -r typecheck"
+  }
+}
