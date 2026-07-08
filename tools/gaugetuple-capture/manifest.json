@@ -1,10 +1,15 @@
 {
   "manifest_version": 3,
   "name": "Gaugetuple Capture (Asktuple dev helper)",
-  "version": "0.1.0",
-  "description": "Copies your dev.gaugetuple.com session cookie and records mutation requests (method/path/body) while you click through the UI. Internal Newtuple dev tool for wiring Asktuple.",
-  "permissions": ["cookies", "webRequest", "storage", "clipboardWrite"],
+  "version": "0.2.0",
+  "description": "Copies your dev.gaugetuple.com session cookie, records mutation requests, and enables embedding the Gaugetuple UI in the Asktuple live-view iframe. Internal Newtuple dev tool.",
+  "permissions": ["cookies", "webRequest", "storage", "clipboardWrite", "declarativeNetRequest"],
   "host_permissions": ["https://dev.gaugetuple.com/*"],
   "background": { "service_worker": "background.js" },
-  "action": { "default_popup": "popup.html", "default_title": "Gaugetuple Capture" }
+  "action": { "default_popup": "popup.html", "default_title": "Gaugetuple Capture" },
+  "declarative_net_request": {
+    "rule_resources": [
+      { "id": "frame_embed", "enabled": true, "path": "rules.json" }
+    ]
+  }
 }

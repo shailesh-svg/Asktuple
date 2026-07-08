@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { DoorResponse, ProfileId, ProposedAction } from "@asktuple/contract";
 import { Door } from "./door/Door.js";
 import { renderCard } from "./registry/cardRegistry.js";
+import { LiveView } from "./live/LiveView.js";
 
 const GATEWAY = import.meta.env.VITE_ASKTUPLE_GATEWAY ?? "http://localhost:8787";
 
@@ -21,6 +22,7 @@ export function App() {
   const [profile, setProfile] = useState<ProfileId>("ai_engineer");
   const [response, setResponse] = useState<DoorResponse | null>(null);
   const [loading, setLoading] = useState(false);
+  const [liveView, setLiveView] = useState(false);
 
   async function ask(intent: string) {
     setLoading(true);
@@ -84,6 +86,13 @@ export function App() {
         </select>
 
         <Door onAsk={ask} loading={loading} profile={profile} />
+
+        <label
+          style={{ display: "flex", alignItems: "center", gap: 8, marginTop: 20, fontSize: 13, color: "var(--gray-600)", cursor: "pointer" }}
+        >
+          <input type="checkbox" checked={liveView} onChange={(e) => setLiveView(e.target.checked)} />
+          Live Gaugetuple view (demo)
+        </label>
       </aside>
 
       <main style={{ padding: 32, overflow: "auto" }}>
@@ -91,6 +100,7 @@ export function App() {
           <>
             {renderCard(response.result, { onAsk: ask, onApprove: approve })}
             <Trace response={response} />
+            {liveView && <LiveView resolvedToolId={response.resolvedToolId} />}
           </>
         ) : (
           <Empty />
