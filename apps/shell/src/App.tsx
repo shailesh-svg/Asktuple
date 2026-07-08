@@ -5,6 +5,8 @@ import { renderCard } from "./registry/cardRegistry.js";
 import { LiveView } from "./live/LiveView.js";
 import { LiveRun } from "./live/LiveRun.js";
 import { liveUrlAfterApproval } from "./live/liveRoutes.js";
+import { GuidedDemo } from "./demo/GuidedDemo.js";
+import { DEMO_SCRIPT } from "./demo/script.js";
 
 const GATEWAY = import.meta.env.VITE_ASKTUPLE_GATEWAY ?? "http://localhost:8787";
 
@@ -27,6 +29,25 @@ export function App() {
   const [liveView, setLiveView] = useState(false);
   const [liveOverride, setLiveOverride] = useState<string | null>(null);
   const [runChannel, setRunChannel] = useState<string | null>(null);
+  const [demoStep, setDemoStep] = useState<number | null>(null);
+
+  function startDemo() {
+    setDemoStep(0);
+    const first = DEMO_SCRIPT[0];
+    if (first.intent) ask(first.intent);
+  }
+
+  function demoNext() {
+    if (demoStep == null) return;
+    const next = demoStep + 1;
+    if (next >= DEMO_SCRIPT.length) {
+      setDemoStep(null);
+      return;
+    }
+    setDemoStep(next);
+    const step = DEMO_SCRIPT[next];
+    if (step.intent) ask(step.intent);
+  }
 
   async function ask(intent: string) {
     setLoading(true);
@@ -103,9 +124,35 @@ export function App() {
           <input type="checkbox" checked={liveView} onChange={(e) => setLiveView(e.target.checked)} />
           Live Gaugetuple view (demo)
         </label>
+
+        <button
+          onClick={startDemo}
+          style={{
+            marginTop: 12,
+            width: "100%",
+            padding: "10px 16px",
+            borderRadius: 9999,
+            border: "1px solid var(--cobalt)",
+            background: "white",
+            color: "var(--cobalt)",
+            font: "inherit",
+            fontWeight: 600,
+            cursor: "pointer",
+          }}
+        >
+          ▶ Guided demo
+        </button>
       </aside>
 
       <main style={{ padding: 32, overflow: "auto" }}>
+        {demoStep != null && (
+          <GuidedDemo
+            step={demoStep}
+            runStarted={runChannel != null}
+            onNext={demoNext}
+            onExit={() => setDemoStep(null)}
+          />
+        )}
         {response ? (
           <>
             {renderCard(response.result, { onAsk: ask, onApprove: approve })}

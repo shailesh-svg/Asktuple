@@ -171,7 +171,8 @@ export async function planWithKeywords(
   }
   if (!pick && /dataset/.test(q)) {
     const id = has("gaugetuple.list_datasets");
-    if (id) pick = { toolId: id, input: {} };
+    const kind = /linked/.test(q) ? "linked" : /evaluation/.test(q) ? "evaluation" : "golden";
+    if (id) pick = { toolId: id, input: { kind } };
   }
   if (!pick && /prompt/.test(q)) {
     const id = has("gaugetuple.list_prompt_jobs");
