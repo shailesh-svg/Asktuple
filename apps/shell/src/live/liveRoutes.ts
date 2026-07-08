@@ -37,3 +37,8 @@ export function liveUrlFor(resolvedToolId: string | null): string {
   const path = (resolvedToolId && ROUTES[resolvedToolId]) || "/";
   return `${GAUGETUPLE_URL}${path}`;
 }
+
+/** After an approval, the work lands in Run History — point the frame there. */
+export function liveUrlAfterApproval(): string {
+  return liveUrlFor("gaugetuple.list_eval_runs");
+}

@@ -7,8 +7,15 @@ import { liveUrlFor } from "./liveRoutes.js";
  * actual app, not a mock of it. Requires the capture extension's
  * "Enable iframe embedding" (see the hint shown under the frame).
  */
-export function LiveView({ resolvedToolId }: { resolvedToolId: string | null }) {
-  const url = liveUrlFor(resolvedToolId);
+export function LiveView({
+  resolvedToolId,
+  overrideUrl,
+}: {
+  resolvedToolId: string | null;
+  /** Set after an approval: jump the frame to where the work is now happening. */
+  overrideUrl?: string | null;
+}) {
+  const url = overrideUrl ?? liveUrlFor(resolvedToolId);
   const [key, setKey] = useState(0);
 
   return (

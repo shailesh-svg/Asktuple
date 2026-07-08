@@ -3,6 +3,7 @@ import type { DoorResponse, ProfileId, ProposedAction } from "@asktuple/contract
 import { Door } from "./door/Door.js";
 import { renderCard } from "./registry/cardRegistry.js";
 import { LiveView } from "./live/LiveView.js";
+import { liveUrlAfterApproval } from "./live/liveRoutes.js";
 
 const GATEWAY = import.meta.env.VITE_ASKTUPLE_GATEWAY ?? "http://localhost:8787";
 
@@ -23,9 +24,11 @@ export function App() {
   const [response, setResponse] = useState<DoorResponse | null>(null);
   const [loading, setLoading] = useState(false);
   const [liveView, setLiveView] = useState(false);
+  const [liveOverride, setLiveOverride] = useState<string | null>(null);
 
   async function ask(intent: string) {
     setLoading(true);
+    setLiveOverride(null); // a new intent re-points the live view by its own route
     try {
       const res = await fetch(`${GATEWAY}/door`, {
         method: "POST",
@@ -48,6 +51,7 @@ export function App() {
     if (res.status === 403) return "denied: your profile lacks this capability.";
     if (res.status === 404) return "denied: this proposal expired or was already used. Ask again to get a fresh one.";
     const data = await res.json().catch(() => ({}));
+    if (data.ok) setLiveOverride(liveUrlAfterApproval()); // show where the work landed
     return data.note ?? (data.ok ? "Executed." : "Could not execute.");
   }
 
@@ -100,7 +104,7 @@ export function App() {
           <>
             {renderCard(response.result, { onAsk: ask, onApprove: approve })}
             <Trace response={response} />
-            {liveView && <LiveView resolvedToolId={response.resolvedToolId} />}
+            {liveView && <LiveView resolvedToolId={response.resolvedToolId} overrideUrl={liveOverride} />}
           </>
         ) : (
           <Empty />
