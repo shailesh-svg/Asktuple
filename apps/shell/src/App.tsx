@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { DoorResponse, ProfileId } from "@asktuple/contract";
+import type { DoorResponse, ProfileId, ProposedAction } from "@asktuple/contract";
 import { Door } from "./door/Door.js";
 import { renderCard } from "./registry/cardRegistry.js";
 
@@ -34,6 +34,17 @@ export function App() {
     } finally {
       setLoading(false);
     }
+  }
+
+  async function approve(p: ProposedAction): Promise<string> {
+    const res = await fetch(`${GATEWAY}/approve`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ profile, toolId: p.execute.toolId, input: p.execute.input }),
+    });
+    if (res.status === 403) return "denied: your profile lacks this capability.";
+    const data = await res.json().catch(() => ({}));
+    return data.note ?? (data.ok ? "Executed." : "Could not execute.");
   }
 
   return (
@@ -74,7 +85,7 @@ export function App() {
       </aside>
 
       <main style={{ padding: 32, overflow: "auto" }}>
-        {response ? renderCard(response.result, ask) : <Empty />}
+        {response ? renderCard(response.result, { onAsk: ask, onApprove: approve }) : <Empty />}
       </main>
     </div>
   );
