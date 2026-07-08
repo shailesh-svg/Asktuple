@@ -33,6 +33,7 @@ export function App() {
 
   function startDemo() {
     setDemoStep(0);
+    setLiveView(true); // the demo drives the real product screen alongside the cards
     const first = DEMO_SCRIPT[0];
     if (first.intent) ask(first.intent);
   }
