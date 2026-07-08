@@ -1,0 +1,27 @@
+<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      body { font: 13px Inter, system-ui, sans-serif; width: 420px; padding: 14px; color: #111827; }
+      h1 { font-size: 14px; letter-spacing: 1px; color: #0047AB; margin: 0 0 10px; }
+      button { padding: 8px 14px; border-radius: 9999px; border: none; background: #0047AB; color: white; font: inherit; font-weight: 600; cursor: pointer; margin-right: 8px; }
+      button.secondary { background: white; color: #111827; border: 1px solid #E5E7EB; }
+      #status { margin: 10px 0; color: #6B7280; }
+      pre { background: #F9FAFB; border: 1px solid #E5E7EB; border-radius: 8px; padding: 8px; max-height: 240px; overflow: auto; font-size: 11px; white-space: pre-wrap; word-break: break-all; }
+      .count { color: #0047AB; font-weight: 600; }
+    </style>
+  </head>
+  <body>
+    <h1>GAUGETUPLE CAPTURE</h1>
+    <div>
+      <button id="cookie">Copy session cookie</button>
+      <button id="export" class="secondary">Copy captured mutations</button>
+      <button id="clear" class="secondary">Clear</button>
+    </div>
+    <div id="status">Log in at dev.gaugetuple.com, then click through: New Evaluation Wizard → submit, create a golden dataset, Export PPT.</div>
+    <div><span class="count" id="count">0</span> mutation requests captured</div>
+    <pre id="log"></pre>
+    <script src="popup.js"></script>
+  </body>
+</html>

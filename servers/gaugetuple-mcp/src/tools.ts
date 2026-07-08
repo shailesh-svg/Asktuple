@@ -1,4 +1,5 @@
 import type { CardResult, ProposedAction } from "@asktuple/contract";
+import { mockResponse } from "./mock.js";
 
 /**
  * Gaugetuple API client. Endpoints below were captured live from
@@ -14,6 +15,8 @@ import type { CardResult, ProposedAction } from "@asktuple/contract";
 const BASE = process.env.GAUGETUPLE_API_BASE ?? "https://dev.gaugetuple.com";
 const TOKEN = process.env.GAUGETUPLE_API_TOKEN ?? "";
 const COOKIE = process.env.GAUGETUPLE_COOKIE ?? "";
+/** GAUGETUPLE_MOCK=1 serves fixture data shaped like the live API (see mock.ts). */
+const MOCK = process.env.GAUGETUPLE_MOCK === "1";
 
 function authHeaders(): Record<string, string> {
   const h: Record<string, string> = {};
@@ -23,6 +26,7 @@ function authHeaders(): Record<string, string> {
 }
 
 async function api<T>(path: string): Promise<T | null> {
+  if (MOCK) return mockResponse(path) as T | null;
   try {
     const res = await fetch(`${BASE}${path}`, { headers: authHeaders() });
     if (!res.ok) return null;
@@ -214,6 +218,15 @@ export async function executeApproved(
   toolId: string,
   _input: Record<string, unknown>,
 ): Promise<{ ok: boolean; note: string }> {
+  if (MOCK) {
+    const what =
+      toolId === "gaugetuple.execute_evaluation"
+        ? `Simulated run run_${Date.now().toString(36)} created in Run History`
+        : toolId === "gaugetuple.execute_golden_dataset"
+          ? "Simulated golden dataset created"
+          : "Simulated report queued";
+    return { ok: true, note: `${what} (GAUGETUPLE_MOCK=1 — nothing touched the real Gaugetuple).` };
+  }
   switch (toolId) {
     case "gaugetuple.execute_evaluation":
       // TODO confirm: POST /evals/eval_jobs
