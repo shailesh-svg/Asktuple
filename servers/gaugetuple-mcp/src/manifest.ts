@@ -25,6 +25,16 @@ function schema(
 
 export const GAUGETUPLE_TOOLS: ToolManifest[] = [
   {
+    id: "gaugetuple.explain",
+    product: "gaugetuple",
+    kind: "read",
+    capability: "read:overview",
+    summary:
+      "Explain a Gaugetuple concept or how this door works: golden datasets, eval types, providers, the evaluation workflow. Use for 'what is…', 'how do I…', 'help', and onboarding questions.",
+    inputSchema: schema({ topic: str("The concept to explain, e.g. 'golden dataset', 'eval types', 'workflow'.") }),
+    card: "doc",
+  },
+  {
     id: "gaugetuple.get_platform_overview",
     product: "gaugetuple",
     kind: "read",

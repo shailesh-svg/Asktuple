@@ -114,7 +114,7 @@ export function App() {
             {liveView && <LiveView resolvedToolId={response.resolvedToolId} overrideUrl={liveOverride} />}
           </>
         ) : (
-          <Empty />
+          <Empty onAsk={ask} />
         )}
       </main>
     </div>
@@ -135,9 +135,33 @@ function Trace({ response }: { response: DoorResponse }) {
   );
 }
 
-function Empty() {
+/** Onboarding: the guided tour IS the empty state — each step fires a real intent. */
+const TOUR: { step: string; why: string; intent: string }[] = [
+  {
+    step: "What is Gaugetuple?",
+    why: "60-second primer: datasets, criteria, eval types, runs.",
+    intent: "What is Gaugetuple?",
+  },
+  {
+    step: "See the platform",
+    why: "Live KPIs — note the 0 golden datasets. That's the gap.",
+    intent: "Show platform overview",
+  },
+  {
+    step: "Look at real runs",
+    why: "Run History is the audit trail: pass rates, providers, verdicts.",
+    intent: "List my recent eval runs",
+  },
+  {
+    step: "Run a check by sentence",
+    why: "The agent finds real datasets, proposes a concrete run — you approve it, then watch it stream live.",
+    intent: "Did my new prompt regress against the current one?",
+  },
+];
+
+function Empty({ onAsk }: { onAsk: (intent: string) => void }) {
   return (
-    <div style={{ color: "var(--gray-600)", maxWidth: 560 }}>
+    <div style={{ color: "var(--gray-600)", maxWidth: 640 }}>
       <h1 style={{ fontWeight: 300, fontSize: 40, color: "var(--gray-900)" }}>
         What do you want to evaluate?
       </h1>
@@ -145,6 +169,37 @@ function Empty() {
         Describe it in plain language. Asktuple resolves who you are, reads what is true in
         Gaugetuple, and assembles the right view. Anything that changes data comes back as a
         proposal you approve.
+      </p>
+
+      <div style={{ marginTop: 28, fontSize: 11, letterSpacing: 1 }}>NEW HERE? TAKE THE TOUR</div>
+      <div style={{ display: "grid", gap: 10, marginTop: 10 }}>
+        {TOUR.map((t, i) => (
+          <button
+            key={t.step}
+            onClick={() => onAsk(t.intent)}
+            style={{
+              display: "flex",
+              gap: 14,
+              alignItems: "baseline",
+              textAlign: "left",
+              padding: "12px 16px",
+              borderRadius: 14,
+              border: "1px solid var(--gray-200)",
+              background: "white",
+              font: "inherit",
+              cursor: "pointer",
+            }}
+          >
+            <span style={{ color: "var(--cobalt)", fontWeight: 700, fontSize: 15 }}>{i + 1}</span>
+            <span>
+              <span style={{ color: "var(--gray-900)", fontWeight: 600 }}>{t.step}</span>
+              <span style={{ display: "block", fontSize: 13, marginTop: 2 }}>{t.why}</span>
+            </span>
+          </button>
+        ))}
+      </div>
+      <p style={{ fontSize: 12, marginTop: 12 }}>
+        Or just ask anything — "what is a golden dataset?", "why did the score drop?".
       </p>
     </div>
   );

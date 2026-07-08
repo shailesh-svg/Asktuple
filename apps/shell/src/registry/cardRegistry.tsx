@@ -30,6 +30,17 @@ export function renderCard(
 type Ctx = { onAsk: (i: string) => void; onApprove: (p: ProposedAction) => Promise<string> };
 
 const REGISTRY: Partial<Record<CardType, (payload: any, ctx: Ctx) => JSX.Element>> = {
+  doc: (p) => (
+    <Section title={p?.title ?? "About"}>
+      <div style={{ maxWidth: 680 }}>
+        {(p?.body ?? []).map((para: string, i: number) => (
+          <p key={i} style={{ color: "var(--gray-900)", lineHeight: 1.65, fontSize: 15, marginBottom: 12 }}>
+            {para}
+          </p>
+        ))}
+      </div>
+    </Section>
+  ),
   overview_kpis: (p) => (
     <Section title="Platform overview">
       <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fit, minmax(160px, 1fr))", gap: 12 }}>

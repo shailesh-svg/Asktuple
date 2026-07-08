@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import type { CardResult, PlanStep, ProfileId, ToolManifest } from "@asktuple/contract";
-import { callTool } from "./mcp.js";
+import { callTool, getServerInstructions } from "./mcp.js";
 
 /**
  * Intent planner. Given ONLY the profile-scoped tool list, an LLM either:
@@ -63,11 +63,12 @@ export async function planWithLlm(
   let lastRead: { toolId: string; result: CardResult } | null = null;
 
   for (let turn = 0; turn < MAX_TURNS; turn++) {
+    const domainPrimer = getServerInstructions();
     const response = await client.messages.create({
       model: MODEL,
       max_tokens: 16000,
       thinking: { type: "adaptive" },
-      system: SYSTEM,
+      system: domainPrimer ? `${SYSTEM}\n\n${domainPrimer}` : SYSTEM,
       tools: apiTools,
       messages,
     });
@@ -144,7 +145,11 @@ export async function planWithKeywords(
   const q = intent.toLowerCase();
 
   let pick: { toolId: string; input: Record<string, unknown> } | null = null;
-  if (/regress|a\/b|compare|candidate|vs\b/.test(q)) {
+  if (/what is|what are|how do|how does|explain|help|onboard|tour/.test(q)) {
+    const id = has("gaugetuple.explain");
+    if (id) pick = { toolId: id, input: { topic: intent } };
+  }
+  if (!pick && /regress|a\/b|compare|candidate|vs\b/.test(q)) {
     const id = has("gaugetuple.propose_evaluation");
     if (id) pick = { toolId: id, input: { evalType: "correctness", datasetId: "" } };
   }

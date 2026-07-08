@@ -30,10 +30,20 @@ const connections: Connection[] = SERVER_URLS.map((url) => ({
 
 let manifests: ToolManifest[] = [];
 
+/** Domain primers each capability server ships at initialize (MCP instructions). */
+const serverInstructions = new Map<string, string>();
+
 async function connect(conn: Connection): Promise<void> {
   const client = new Client({ name: "asktuple-host", version: "0.1.0" });
   await client.connect(new StreamableHTTPClientTransport(new URL(conn.url)));
   conn.client = client;
+  const instructions = client.getInstructions();
+  if (instructions) serverInstructions.set(conn.url, instructions);
+}
+
+/** Concatenated primers from every connected server — appended to the planner's system prompt. */
+export function getServerInstructions(): string {
+  return [...serverInstructions.values()].join("\n\n");
 }
 
 function manifestFromMcpTool(tool: {

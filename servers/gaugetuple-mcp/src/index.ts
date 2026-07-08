@@ -8,6 +8,7 @@ import {
 } from "@modelcontextprotocol/sdk/types.js";
 import type { CardResult } from "@asktuple/contract";
 import { GAUGETUPLE_TOOLS } from "./manifest.js";
+import { INSTRUCTIONS, explain } from "./knowledge.js";
 import * as T from "./tools.js";
 
 /**
@@ -30,6 +31,8 @@ const localName = (id: string) => id.split(".").pop()!;
 
 async function callAsktupleTool(id: string, input: Record<string, unknown>): Promise<CardResult> {
   switch (id) {
+    case "gaugetuple.explain":
+      return explain(input as { topic?: string });
     case "gaugetuple.get_platform_overview":
       return T.getPlatformOverview();
     case "gaugetuple.list_eval_runs":
@@ -60,9 +63,11 @@ async function callAsktupleTool(id: string, input: Record<string, unknown>): Pro
 }
 
 function buildServer(): Server {
+  // `instructions` is the MCP-native way to ship domain knowledge: every host
+  // (Asktuple's planner, Claude, an IDE) receives the primer at initialize.
   const server = new Server(
     { name: "asktuple-gaugetuple", version: "0.1.0" },
-    { capabilities: { tools: {} } },
+    { capabilities: { tools: {} }, instructions: INSTRUCTIONS },
   );
 
   server.setRequestHandler(ListToolsRequestSchema, async () => ({

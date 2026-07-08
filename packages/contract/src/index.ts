@@ -110,6 +110,7 @@ export type ProductId = "gaugetuple" | "flowtuple" | "dialogtuple";
 // ---------------------------------------------------------------------------
 
 export type CardType =
+  | "doc" // documentation/onboarding: title + prose sections
   | "overview_kpis"
   | "run_list"
   | "run_detail"

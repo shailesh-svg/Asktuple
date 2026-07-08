@@ -81,6 +81,7 @@ shell (:5173) ──/door /approve /tools──▶ host (:8787) ──MCP tools/
 packages/contract/src/index.ts        Types + PROFILE_CAPABILITIES + toolsForProfile(). The contract.
 packages/ui/src/tokens.ts             Newtuple brand tokens (cobalt #0047AB, Inter).
 servers/gaugetuple-mcp/src/manifest.ts Tool list: id, capability, kind, JSON Schema input, card.
+servers/gaugetuple-mcp/src/knowledge.ts Domain primer (MCP instructions -> planner prompt) + explain tool topics.
 servers/gaugetuple-mcp/src/tools.ts    Gaugetuple API client + read impls + proposals + execute stubs.
 servers/gaugetuple-mcp/src/index.ts    MCP server (Streamable HTTP, stateless) on :8788/mcp.
 servers/host/src/index.ts              Host: /tools, /door, /approve. resolveProfile() = P5 hook.
