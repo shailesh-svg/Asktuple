@@ -6,6 +6,7 @@
   "packageManager": "pnpm@9.0.0",
   "scripts": {
     "dev": "pnpm --filter @asktuple/shell dev",
+    "dev:host": "pnpm --filter @asktuple/host dev",
     "dev:gaugetuple": "pnpm --filter @asktuple/gaugetuple-mcp dev",
     "build": "pnpm -r build",
     "typecheck": "pnpm -r typecheck"

@@ -138,22 +138,25 @@ export async function listPromptJobs(_input: { status?: string }): Promise<CardR
 }
 
 // ---- Mutations. Return a ProposedAction. Never execute on call. -----------
-// On approval the host calls the endpoints marked TODO (not yet observed live;
-// trigger the New Evaluation Wizard / dataset create / export once to confirm).
+// A proposal's execute.toolId points at an execute_* tool, which the host will
+// only call after an operator approves the stored proposal.
 
 export function proposeEvaluation(input: {
   evalType: string;
   datasetId: string;
+  datasetName?: string;
   baselinePrompt?: string;
   candidatePrompt?: string;
   provider?: string;
 }): CardResult {
+  const dataset = input.datasetName
+    ? `"${input.datasetName}" (${input.datasetId})`
+    : input.datasetId || "(pick one)";
   const proposal: ProposedAction = {
     id: `prop_${Date.now()}`,
     product: "gaugetuple",
-    title: `Run a ${input.evalType} evaluation on dataset ${input.datasetId || "(pick one)"}`,
-    // TODO confirm: POST /evals/eval_jobs with this body.
-    execute: { toolId: "gaugetuple.propose_evaluation", input },
+    title: `Run a ${input.evalType} evaluation on dataset ${dataset}`,
+    execute: { toolId: "gaugetuple.execute_evaluation", input },
     capability: "run:evaluation",
     effects: [
       `Executes a ${input.evalType} run via ${input.provider ?? "the default provider"}.`,
@@ -167,16 +170,24 @@ export function proposeEvaluation(input: {
   return { card: "proposal", payload: proposal };
 }
 
-export function proposeGoldenDataset(input: { name: string; sourceEntryIds: string[] }): CardResult {
+export function proposeGoldenDataset(input: {
+  name: string;
+  sourceEntryIds?: string[];
+  sourceDatasetId?: string;
+}): CardResult {
+  const entries = input.sourceEntryIds?.length
+    ? `from ${input.sourceEntryIds.length} entries`
+    : input.sourceDatasetId
+      ? `derived from dataset ${input.sourceDatasetId}`
+      : "from scratch";
   const proposal: ProposedAction = {
     id: `prop_${Date.now()}`,
     product: "gaugetuple",
     title: `Create golden dataset "${input.name}"`,
-    // TODO confirm: POST /evals/dataset (type=golden) with these entries.
-    execute: { toolId: "gaugetuple.propose_golden_dataset", input },
+    execute: { toolId: "gaugetuple.execute_golden_dataset", input },
     capability: "write:golden_dataset",
     effects: [
-      `Creates a versioned golden dataset from ${input.sourceEntryIds.length} entries.`,
+      `Creates a versioned golden dataset ${entries}.`,
       "Makes it available as a baseline for future evaluations.",
     ],
   };
@@ -188,10 +199,41 @@ export function proposeReportExport(input: { scope: string; window?: string }): 
     id: `prop_${Date.now()}`,
     product: "gaugetuple",
     title: `Export a PPT report for ${input.scope}`,
-    // TODO confirm: the dashboard "Export PPT" endpoint.
-    execute: { toolId: "gaugetuple.propose_report_export", input },
+    execute: { toolId: "gaugetuple.execute_report_export", input },
     capability: "export:report",
     effects: [`Generates a client-ready PPT for ${input.scope} (${input.window ?? "30d"}).`],
   };
   return { card: "proposal", payload: proposal };
+}
+
+// ---- Execute. Called by the host only after an approved proposal. ----------
+// TODO(P1): capture the real mutation endpoints (New Evaluation Wizard submit,
+// dataset create, Export PPT) with DevTools and wire the POSTs here.
+
+export async function executeApproved(
+  toolId: string,
+  _input: Record<string, unknown>,
+): Promise<{ ok: boolean; note: string }> {
+  switch (toolId) {
+    case "gaugetuple.execute_evaluation":
+      // TODO confirm: POST /evals/eval_jobs
+      return {
+        ok: false,
+        note: "Approved, but the Gaugetuple run-evaluation endpoint is not yet captured (P1). No run was created.",
+      };
+    case "gaugetuple.execute_golden_dataset":
+      // TODO confirm: POST /evals/dataset (type=golden)
+      return {
+        ok: false,
+        note: "Approved, but the Gaugetuple dataset-create endpoint is not yet captured (P1). No dataset was created.",
+      };
+    case "gaugetuple.execute_report_export":
+      // TODO confirm: the dashboard "Export PPT" endpoint.
+      return {
+        ok: false,
+        note: "Approved, but the Gaugetuple export endpoint is not yet captured (P1). No report was generated.",
+      };
+    default:
+      return { ok: false, note: `Unknown execute tool ${toolId}.` };
+  }
 }

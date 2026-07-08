@@ -9,52 +9,85 @@ and `docs/PROFILES.md`.
 
 A single natural-language door in front of Newtuple's internal products, starting
 with Gaugetuple (AI evaluation). User types intent → host resolves profile +
-capability, reads truth from the product API, assembles a native card. Mutations
-return an approval proposal. Reads never fabricate; unavailable sources render a
-degraded card. Adding a product later = adding a capability server, not editing
-the shell.
+capability, plans against the product API (reads first, to ground the request in
+real data), and assembles a native card. Mutations return an approval proposal
+stored server-side. Reads never fabricate; unavailable sources render a degraded
+card. Adding a product later = registering another MCP capability server, not
+editing the shell or the host.
 
 ## Repo
 
 - GitHub: `https://github.com/shailesh-svg/Asktuple` (branch `main`).
-- Local working copy currently at:
-  `~/Library/Application Support/Claude/local-agent-mode-sessions/.../outputs/asktuple`
-  MOVE IT to a stable path (e.g. `~/dev/asktuple`) — the current location is a
-  temp session folder and can be cleared.
-- Stack: pnpm workspace, TypeScript. Client = Vite + React. Server = Express + tsx.
+- Local working copy currently in a temp session folder — MOVE IT to a stable
+  path (e.g. `~/dev/asktuple`).
+- Stack: pnpm workspace, TypeScript. Client = Vite + React. Host + capability
+  server = Express + tsx. Capability server speaks real MCP
+  (`@modelcontextprotocol/sdk`, Streamable HTTP). Planner = Anthropic SDK.
 
 ## Run
 
 ```bash
 pnpm install
-# terminal 1 — gateway on :8787
+# terminal 1 — Gaugetuple MCP capability server on :8788/mcp
 GAUGETUPLE_COOKIE='<paste a logged-in dev.gaugetuple.com cookie>' pnpm dev:gaugetuple
-# terminal 2 — shell on :5173
+# terminal 2 — Asktuple host on :8787 (LLM planner needs Anthropic credentials)
+ANTHROPIC_API_KEY='<key>' pnpm dev:host
+# terminal 3 — shell on :5173
 pnpm dev
 ```
 
-Requires Node 18+ (developed on Node 26, pnpm 9). Open http://localhost:5173.
+Without `ANTHROPIC_API_KEY` the host falls back to the deterministic keyword
+resolver (works, but is routing only — no plan-then-propose). Without
+`GAUGETUPLE_COOKIE` reads correctly return `unavailable` cards.
 
-## Current status (verified)
+## Architecture (current, verified)
 
-- `pnpm install`, `pnpm -r typecheck` (all 4 packages), and `pnpm --filter @asktuple/shell build` all pass.
-- Gateway smoke-tested: capability filtering, intent→tool resolution, proposal
-  generation, and `/approve` capability re-check (403 for disallowed profile) all work.
-- Shell renders native cards: KPI tiles, tables (runs/datasets/prompt jobs),
-  analytics panels, working Approve button, degraded state.
-- Read tools are wired to the REAL Gaugetuple endpoints (see below). Without a
-  session they correctly return `unavailable`.
+```
+shell (:5173) ──/door /approve /tools──▶ host (:8787) ──MCP tools/list+call──▶ gaugetuple-mcp (:8788/mcp) ──▶ Gaugetuple API
+```
+
+- **gaugetuple-mcp** is a real MCP server. Tools carry Asktuple metadata in
+  `_meta` (`asktuple/capability`, `asktuple/kind`, `asktuple/card`). Three tool
+  kinds: `read` (execute freely), `mutation` (return a ProposedAction, never
+  execute), `execute` (never advertised to the planner; reachable only through
+  an approved proposal). Any MCP host can consume this server.
+- **host** discovers tools over MCP (`ASKTUPLE_SERVERS`, comma-separated URLs —
+  this is how Flowtuple/Dialogtuple get added), filters by profile capability
+  BEFORE resolution, then runs the **planner**: an LLM agentic loop
+  (claude-opus-4-8) given only the profile-scoped tools. Read intents → one
+  read tool, card renders directly. Mutation intents → the planner calls read
+  tools first (real dataset ids/names) then the propose_* tool with concrete
+  inputs. Keyword resolver is the offline fallback.
+- **Proposals are stored server-side** with a minted id (15 min TTL, one-shot).
+  `/approve` takes ONLY `{profile, proposalId}` — re-checks capability, then
+  calls the execute_* tool over MCP. A client cannot submit a toolId+input.
+- **Shell** renders from the fixed card registry; shows a resolution trace
+  (which tool, planner vs fallback, which reads grounded it).
+
+## Verified (smoke-tested end to end)
+
+- `pnpm install`, `pnpm -r typecheck` (5 packages), shell build: pass.
+- Host discovers 12 tools from the MCP server; execute tools never appear in
+  `/tools` for any profile.
+- `/door` regression intent → proposal card with server-minted id (keyword path;
+  LLM path not yet run — no Anthropic credentials on the dev machine).
+- `/approve` by id executes the stub and returns the honest P1 note; replaying
+  the same id → 404; forged `{toolId,input}` body → 400; `client_viewer`
+  approving a `run:evaluation` proposal → 403.
 
 ## File map
 
 ```
 packages/contract/src/index.ts        Types + PROFILE_CAPABILITIES + toolsForProfile(). The contract.
 packages/ui/src/tokens.ts             Newtuple brand tokens (cobalt #0047AB, Inter).
-servers/gaugetuple-mcp/src/manifest.ts Tool list: id, capability, card, input.
-servers/gaugetuple-mcp/src/tools.ts    Gaugetuple API client + read impls + mutation proposals.
-servers/gaugetuple-mcp/src/index.ts    Express gateway: /tools, /door (resolve+execute), /approve. Keyword resolver (PLACEHOLDER).
-apps/shell/src/App.tsx                 Profile picker, ask(), approve().
-apps/shell/src/door/Door.tsx           Intent box + per-profile starter chips.
+servers/gaugetuple-mcp/src/manifest.ts Tool list: id, capability, kind, JSON Schema input, card.
+servers/gaugetuple-mcp/src/tools.ts    Gaugetuple API client + read impls + proposals + execute stubs.
+servers/gaugetuple-mcp/src/index.ts    MCP server (Streamable HTTP, stateless) on :8788/mcp.
+servers/host/src/index.ts              Host: /tools, /door, /approve. resolveProfile() = P5 hook.
+servers/host/src/mcp.ts                MCP client; ASKTUPLE_SERVERS registry; manifest discovery.
+servers/host/src/planner.ts            LLM planner (agentic loop) + keyword fallback.
+servers/host/src/proposals.ts          Server-side proposal store (TTL, one-shot approve).
+apps/shell/src/App.tsx                 Profile picker, ask(), approve-by-id, resolution trace.
 apps/shell/src/registry/cardRegistry.tsx  Fixed CardType → component map. All UI lives here.
 docs/GAUGETUPLE_API.md                 Observed real API (endpoints + reference values).
 ```
@@ -71,68 +104,63 @@ Mutations (NOT yet observed — must be captured): run evaluation (likely
 `POST /evals/eval_jobs`), create golden dataset (likely `POST /evals/dataset`),
 export PPT (unknown).
 
-## Auth options (server-side gateway)
+## Auth options
 
-Set either env var before starting the gateway:
-- `GAUGETUPLE_COOKIE` — full Cookie header copied from a logged-in session.
-- `GAUGETUPLE_API_TOKEN` — sent as `Authorization: Bearer`.
-If Gaugetuple has no service-token path, add one; a shared front door should not
-depend on a human's browser cookie in production.
+Gateway → Gaugetuple: set `GAUGETUPLE_COOKIE` (full Cookie header) or
+`GAUGETUPLE_API_TOKEN` (Bearer) before starting `dev:gaugetuple`. If Gaugetuple
+has no service-token path, add one; a shared front door should not depend on a
+human's browser cookie in production.
+
+Host → Anthropic: `ANTHROPIC_API_KEY` (or any SDK-resolvable credential).
+Planner model override: `ASKTUPLE_PLANNER_MODEL` (default `claude-opus-4-8`).
 
 ## Remaining work (priority order, with acceptance criteria)
 
-### P0 — Confirm live reads
-Provide a valid `GAUGETUPLE_COOKIE`, load the shell, run "show platform overview"
-and "list my eval runs".
-- Done when: overview shows the real counts (≈59 runs, 53 criteria, 14 linked) and
-  the run table shows real rows. If it 401s, inspect the gateway fetch and adjust
-  the auth header (cookie vs bearer vs same-site).
+### P0 — Confirm live reads + live planner
+Provide `GAUGETUPLE_COOKIE` and `ANTHROPIC_API_KEY`, run "did my new prompt
+regress vs the current one" as AI Engineer.
+- Done when: the planner calls list_datasets/list_eval_runs first and the
+  proposal names a REAL dataset (id + name), and "show platform overview" shows
+  the real counts (≈59 runs, 53 criteria, 14 linked).
 
 ### P1 — Capture mutation endpoints, wire real execution
 On dev.gaugetuple.com with DevTools → Network recording, trigger: New Evaluation
 Wizard (submit), create a golden dataset, Export PPT. Record method, path, body.
-Then in `servers/gaugetuple-mcp/src/index.ts` `/approve`, replace the TODO with the
-real POST(s), keyed by `toolId`.
+Then fill in `executeApproved()` in `servers/gaugetuple-mcp/src/tools.ts`.
 - Done when: approving a `propose_evaluation` in the shell creates a real run in
   Gaugetuple Run History, and `/approve` still 403s for `client_viewer`.
 
 ### P2 — Live run broadcast
 After a run is created, stream progress to the `run_broadcast` card. Add an SSE
-endpoint on the gateway (`GET /runs/:channel/events`) that polls the Gaugetuple
-run status and emits `RunEvent`s (type already in contract). Render a live
-progress card and let read-only profiles subscribe.
+endpoint on the host (`GET /runs/:channel/events`) that polls the Gaugetuple run
+status via MCP and emits `RunEvent`s (type already in contract).
 - Done when: approving a run opens a live card that updates to passed/failed
   without a manual refresh.
 
-### P3 — Replace the keyword resolver with constrained LLM tool-selection
-`resolveIntent()` in `index.ts` is a deterministic placeholder. Replace with an
-LLM call that is given ONLY `toolsForProfile(...)` and must return a toolId + inputs.
-Must not invent tools or data. Keep the placeholder as offline fallback.
-- Done when: free-form intents route correctly and out-of-scope intents return a
-  graceful "no tool" result, with the resolved toolId shown for transparency.
+### P3 — Real analytics charts
+`score_analytics` currently renders panels/tables. Add recharts for score trends
+and provider comparison once the payload shape is confirmed live.
 
-### P4 — Real analytics charts
-`score_analytics` currently renders panels/tables. Add recharts (already common in
-the ecosystem) for score trends and provider comparison once the payload shape is
-confirmed against a live response.
-
-### P5 — Real authorization model
-`PROFILE_CAPABILITIES` in `packages/contract` is hand-defined. Wire it to
-Gaugetuple's actual roles/permissions (via `/authtuple/organizations/` or a roles
-endpoint) so it cannot drift. `/approve` must check server-side against the real model.
+### P4 — Real authorization model
+`resolveProfile()` in `servers/host/src/index.ts` trusts the request body — it
+is the single hook for P5-grade identity. Derive profile from a real session
+(authtuple/SSO) and wire `PROFILE_CAPABILITIES` to Gaugetuple's actual roles so
+it cannot drift. Use per-user Gaugetuple credentials so the audit trail is true.
 
 ## Gotchas
 
-- `resolveIntent` is keyword-based on purpose; do not ship it as the resolver.
-- The first commit accidentally included `package-lock.json` and a `_tmp_*` file.
-  `.gitignore` now excludes them; run `git rm --cached package-lock.json _tmp_*`
-  once and commit.
+- The keyword resolver is the FALLBACK, not the resolver. Do not demo without
+  Anthropic credentials and call it the product.
+- MCP server is stateless Streamable HTTP (a fresh server per POST). If you add
+  server-initiated notifications later, switch to session mode.
+- Anthropic tool names cannot contain dots; the host maps `gaugetuple.x` ⇄
+  `gaugetuple__x` at the API boundary (`planner.ts`).
 - We use pnpm (`workspace:*`). Do not `npm install` at the root.
-- Shell → gateway is cross-origin (5173→8787); gateway has CORS enabled. Keep it.
+- Shell → host is cross-origin (5173→8787); host has CORS enabled. Keep it.
 
 ## Definition of done for Phase 1
 
-An AI Engineer types "did my new prompt regress vs the current one", gets a
-proposal built from real datasets/criteria, approves it, a real evaluation runs in
-Gaugetuple, and the result renders live in the shell — while a Client profile can
-watch the run but cannot trigger or approve it.
+An AI Engineer types "did my new prompt regress vs the current one", the planner
+reads real datasets/criteria and returns a concrete proposal, they approve it, a
+real evaluation runs in Gaugetuple, and the result renders live in the shell —
+while a Client profile can watch the run but cannot trigger or approve it.

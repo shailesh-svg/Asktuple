@@ -37,12 +37,14 @@ export function App() {
   }
 
   async function approve(p: ProposedAction): Promise<string> {
+    // Approval is by proposal id only — the host holds what will execute.
     const res = await fetch(`${GATEWAY}/approve`, {
       method: "POST",
       headers: { "content-type": "application/json" },
-      body: JSON.stringify({ profile, toolId: p.execute.toolId, input: p.execute.input }),
+      body: JSON.stringify({ profile, proposalId: p.id }),
     });
     if (res.status === 403) return "denied: your profile lacks this capability.";
+    if (res.status === 404) return "denied: this proposal expired or was already used. Ask again to get a fresh one.";
     const data = await res.json().catch(() => ({}));
     return data.note ?? (data.ok ? "Executed." : "Could not execute.");
   }
@@ -85,8 +87,29 @@ export function App() {
       </aside>
 
       <main style={{ padding: 32, overflow: "auto" }}>
-        {response ? renderCard(response.result, { onAsk: ask, onApprove: approve }) : <Empty />}
+        {response ? (
+          <>
+            {renderCard(response.result, { onAsk: ask, onApprove: approve })}
+            <Trace response={response} />
+          </>
+        ) : (
+          <Empty />
+        )}
       </main>
+    </div>
+  );
+}
+
+/** Transparency: which tool answered, how it was resolved, what was read on the way. */
+function Trace({ response }: { response: DoorResponse }) {
+  if (!response.resolvedToolId) return null;
+  const reads = (response.steps ?? []).filter((s) => s.toolId !== response.resolvedToolId);
+  return (
+    <div style={{ marginTop: 20, fontSize: 12, color: "var(--gray-600)" }}>
+      Resolved to <code>{response.resolvedToolId}</code> via {response.resolver === "llm" ? "the planner" : "keyword fallback"}
+      {reads.length > 0 && (
+        <> · grounded on {reads.map((s) => <code key={s.toolId} style={{ marginLeft: 4 }}>{s.toolId.split(".").pop()}</code>)}</>
+      )}
     </div>
   );
 }

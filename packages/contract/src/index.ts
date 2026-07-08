@@ -81,7 +81,12 @@ export const PROFILE_CAPABILITIES: Record<ProfileId, Capability[]> = {
 // Tool manifest (what a product's MCP server advertises)
 // ---------------------------------------------------------------------------
 
-export type ToolKind = "read" | "mutation";
+/**
+ * "read" and "mutation" tools are advertised to the intent planner.
+ * "execute" tools are never advertised: they are reachable only through an
+ * approved proposal, so a client cannot invoke a mutation directly.
+ */
+export type ToolKind = "read" | "mutation" | "execute";
 
 export interface ToolManifest {
   /** Namespaced id, e.g. "gaugetuple.list_eval_runs". */
@@ -92,8 +97,8 @@ export interface ToolManifest {
   capability: Capability;
   /** One line the intent resolver reads to route a request. */
   summary: string;
-  /** JSON-schema-ish input description, kept intentionally small. */
-  input: Record<string, "string" | "number" | "boolean" | "string[]">;
+  /** JSON Schema for the tool's input (also what the MCP server advertises). */
+  inputSchema: Record<string, unknown>;
   /** The card type this tool renders into on success. */
   card: CardType;
 }
@@ -170,14 +175,24 @@ export interface DoorRequest {
   intent: string;
 }
 
+/** One step the planner took on the way to the rendered card (transparency). */
+export interface PlanStep {
+  toolId: string;
+  ok: boolean;
+}
+
 export interface DoorResponse {
   /** The tool the host resolved the intent to (for transparency). */
   resolvedToolId: string | null;
+  /** How the intent was resolved: LLM planner, or the offline keyword fallback. */
+  resolver: "llm" | "keyword";
+  /** Reads the planner executed to ground the result (empty for direct reads). */
+  steps: PlanStep[];
   result: CardResult;
 }
 
-/** Utility: which tools may this profile even see. */
+/** Utility: which tools may this profile even see (execute tools are never advertised). */
 export function toolsForProfile(tools: ToolManifest[], profile: ProfileId): ToolManifest[] {
   const allowed = new Set(PROFILE_CAPABILITIES[profile]);
-  return tools.filter((t) => allowed.has(t.capability));
+  return tools.filter((t) => t.kind !== "execute" && allowed.has(t.capability));
 }

@@ -1,71 +1,35 @@
 import express from "express";
 import cors from "cors";
+import { Server } from "@modelcontextprotocol/sdk/server/index.js";
+import { StreamableHTTPServerTransport } from "@modelcontextprotocol/sdk/server/streamableHttp.js";
 import {
-  toolsForProfile,
-  PROFILE_CAPABILITIES,
-  type DoorRequest,
-  type DoorResponse,
-  type ProfileId,
-} from "@asktuple/contract";
+  CallToolRequestSchema,
+  ListToolsRequestSchema,
+} from "@modelcontextprotocol/sdk/types.js";
+import type { CardResult } from "@asktuple/contract";
 import { GAUGETUPLE_TOOLS } from "./manifest.js";
 import * as T from "./tools.js";
 
 /**
- * Asktuple host gateway (Gaugetuple edition).
+ * Gaugetuple capability server — a real MCP server (Streamable HTTP).
  *
- * Flow: intent -> filter tools by profile -> resolve to one tool -> execute
- * reads immediately, return mutations as proposals -> /approve executes an
- * approved proposal after re-checking capability.
+ * Advertises tools/list with Asktuple metadata in _meta:
+ *   asktuple/capability  the Capability the caller must hold
+ *   asktuple/kind        read | mutation | execute
+ *   asktuple/card        the CardType the shell renders the result into
+ *   asktuple/product     "gaugetuple"
  *
- * The `resolveIntent` function is a deterministic placeholder. Swap it for an
- * LLM call that must choose from the profile-scoped tool list only. The model
- * selects a tool and fills inputs; it never invents data or UI.
+ * The Asktuple host is one client of this server; any MCP host can be another.
+ * Tool results are CardResults serialized as JSON text content. This server
+ * holds no authorization state — profile scoping and the proposal/approve flow
+ * live in the host.
  */
 
-const app = express();
-app.use(cors());
-app.use(express.json());
+/** MCP tool names must match [a-zA-Z0-9_-]; strip the "gaugetuple." prefix. */
+const localName = (id: string) => id.split(".").pop()!;
 
-/** Placeholder resolver. Real version: LLM constrained to the allowed tools. */
-function resolveIntent(intent: string, profile: ProfileId): { toolId: string; input: Record<string, unknown> } | null {
-  const allowed = toolsForProfile(GAUGETUPLE_TOOLS, profile);
-  const has = (id: string) => allowed.find((t) => t.id === id)?.id ?? null;
-  const q = intent.toLowerCase();
-
-  if (/regress|a\/b|compare|candidate|vs\b/.test(q)) {
-    const id = has("gaugetuple.propose_evaluation");
-    if (id) return { toolId: id, input: { evalType: "correctness", datasetId: "" } };
-  }
-  if (/golden|reference set|ground truth/.test(q)) {
-    const id = has("gaugetuple.propose_golden_dataset");
-    if (id) return { toolId: id, input: { name: "New golden set", sourceEntryIds: [] } };
-  }
-  if (/export|ppt|report|client/.test(q)) {
-    const id = has("gaugetuple.propose_report_export");
-    if (id) return { toolId: id, input: { scope: "latest run" } };
-  }
-  if (/run|evaluation|eval history/.test(q)) {
-    const id = has("gaugetuple.list_eval_runs");
-    if (id) return { toolId: id, input: { limit: 20 } };
-  }
-  if (/analytic|score|trend|pass rate|drop/.test(q)) {
-    const id = has("gaugetuple.get_score_analytics");
-    if (id) return { toolId: id, input: { window: "30d" } };
-  }
-  if (/dataset/.test(q)) {
-    const id = has("gaugetuple.list_datasets");
-    if (id) return { toolId: id, input: {} };
-  }
-  if (/prompt/.test(q)) {
-    const id = has("gaugetuple.list_prompt_jobs");
-    if (id) return { toolId: id, input: {} };
-  }
-  const id = has("gaugetuple.get_platform_overview");
-  return id ? { toolId: id, input: {} } : null;
-}
-
-async function execute(toolId: string, input: Record<string, unknown>) {
-  switch (toolId) {
+async function callAsktupleTool(id: string, input: Record<string, unknown>): Promise<CardResult> {
+  switch (id) {
     case "gaugetuple.get_platform_overview":
       return T.getPlatformOverview();
     case "gaugetuple.list_eval_runs":
@@ -84,46 +48,72 @@ async function execute(toolId: string, input: Record<string, unknown>) {
       return T.proposeGoldenDataset(input as any);
     case "gaugetuple.propose_report_export":
       return T.proposeReportExport(input as any);
+    case "gaugetuple.execute_evaluation":
+    case "gaugetuple.execute_golden_dataset":
+    case "gaugetuple.execute_report_export": {
+      const result = await T.executeApproved(id, input);
+      return { card: "unavailable", payload: result };
+    }
     default:
-      return { card: "unavailable" as const, payload: { what: toolId } };
+      return { card: "unavailable", payload: { what: id } };
   }
 }
 
-/** Tools this profile is allowed to see. */
-app.get("/tools", (req, res) => {
-  const profile = (req.query.profile as ProfileId) ?? "ai_engineer";
-  res.json({ profile, tools: toolsForProfile(GAUGETUPLE_TOOLS, profile) });
+function buildServer(): Server {
+  const server = new Server(
+    { name: "asktuple-gaugetuple", version: "0.1.0" },
+    { capabilities: { tools: {} } },
+  );
+
+  server.setRequestHandler(ListToolsRequestSchema, async () => ({
+    tools: GAUGETUPLE_TOOLS.map((t) => ({
+      name: localName(t.id),
+      description: t.summary,
+      inputSchema: t.inputSchema as any,
+      _meta: {
+        "asktuple/id": t.id,
+        "asktuple/capability": t.capability,
+        "asktuple/kind": t.kind,
+        "asktuple/card": t.card,
+        "asktuple/product": t.product,
+      },
+    })),
+  }));
+
+  server.setRequestHandler(CallToolRequestSchema, async (req) => {
+    const tool = GAUGETUPLE_TOOLS.find((t) => localName(t.id) === req.params.name);
+    if (!tool) {
+      return {
+        content: [{ type: "text" as const, text: JSON.stringify({ card: "unavailable", payload: { what: req.params.name } }) }],
+        isError: true,
+      };
+    }
+    const result = await callAsktupleTool(tool.id, (req.params.arguments ?? {}) as Record<string, unknown>);
+    return { content: [{ type: "text" as const, text: JSON.stringify(result) }] };
+  });
+
+  return server;
+}
+
+// Stateless Streamable HTTP: one server+transport pair per request.
+const app = express();
+app.use(cors());
+app.use(express.json());
+
+app.post("/mcp", async (req, res) => {
+  const server = buildServer();
+  const transport = new StreamableHTTPServerTransport({ sessionIdGenerator: undefined });
+  res.on("close", () => {
+    void transport.close();
+    void server.close();
+  });
+  await server.connect(transport);
+  await transport.handleRequest(req, res, req.body);
 });
 
-/** Resolve an intent and render a card. Reads run; mutations come back as proposals. */
-app.post("/door", async (req, res) => {
-  const { profile, intent } = req.body as DoorRequest;
-  const resolved = resolveIntent(intent, profile);
-  if (!resolved) {
-    const response: DoorResponse = {
-      resolvedToolId: null,
-      result: { card: "unavailable", payload: { what: "a tool for this request" } },
-    };
-    return res.json(response);
-  }
-  const result = await execute(resolved.toolId, resolved.input);
-  res.json({ resolvedToolId: resolved.toolId, result } satisfies DoorResponse);
-});
+// Stateless mode has no session to GET/DELETE.
+app.get("/mcp", (_req, res) => res.status(405).json({ error: "stateless server; POST only" }));
+app.delete("/mcp", (_req, res) => res.status(405).json({ error: "stateless server; POST only" }));
 
-/** Approve and execute a proposal. Re-checks capability against the profile. */
-app.post("/approve", async (req, res) => {
-  const { profile, toolId, input } = req.body as {
-    profile: ProfileId;
-    toolId: string;
-    input: Record<string, unknown>;
-  };
-  const tool = GAUGETUPLE_TOOLS.find((t) => t.id === toolId);
-  if (!tool || !PROFILE_CAPABILITIES[profile].includes(tool.capability)) {
-    return res.status(403).json({ error: "capability_denied" });
-  }
-  // TODO: call the real Gaugetuple mutation endpoint here, then open a broadcast channel.
-  res.json({ ok: true, executed: toolId, note: "Wire the real Gaugetuple mutation endpoint." });
-});
-
-const PORT = Number(process.env.PORT ?? 8787);
-app.listen(PORT, () => console.log(`Asktuple gateway (gaugetuple) on :${PORT}`));
+const PORT = Number(process.env.PORT ?? 8788);
+app.listen(PORT, () => console.log(`Gaugetuple MCP server on :${PORT}/mcp`));

@@ -1,5 +1,5 @@
 {
-  "name": "@asktuple/gaugetuple-mcp",
+  "name": "@asktuple/host",
   "version": "0.1.0",
   "type": "module",
   "scripts": {
@@ -8,6 +8,7 @@
     "typecheck": "tsc --noEmit"
   },
   "dependencies": {
+    "@anthropic-ai/sdk": "^0.110.0",
     "@asktuple/contract": "workspace:*",
     "@modelcontextprotocol/sdk": "^1.17.0",
     "cors": "^2.8.5",
