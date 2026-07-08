@@ -11,7 +11,7 @@ import {
 import { getTools, refreshTools, callTool } from "./mcp.js";
 import { plan } from "./planner.js";
 import { createProposal, consumeProposal } from "./proposals.js";
-import { simulateRun, subscribe } from "./broadcast.js";
+import { simulateRun, snapshot, subscribe } from "./broadcast.js";
 
 /**
  * Asktuple host. One door, many capability servers.
@@ -94,6 +94,11 @@ app.post("/approve", async (req, res) => {
 /** Live run events (SSE). Read-only by nature; no capability gate needed. */
 app.get("/runs/:channel/events", (req, res) => {
   subscribe(req.params.channel, res);
+});
+
+/** Snapshot for non-SSE consumers (the Asktuple MCP server's run_status tool). */
+app.get("/runs/:channel", (req, res) => {
+  res.json(snapshot(req.params.channel));
 });
 
 const PORT = Number(process.env.PORT ?? 8787);

@@ -1,0 +1,19 @@
+{
+  "name": "@asktuple/asktuple-mcp",
+  "version": "0.1.0",
+  "type": "module",
+  "bin": { "asktuple-mcp": "src/index.ts" },
+  "scripts": {
+    "dev": "tsx src/index.ts",
+    "build": "tsc",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@asktuple/contract": "workspace:*",
+    "@modelcontextprotocol/sdk": "^1.17.0"
+  },
+  "devDependencies": {
+    "tsx": "^4.16.2",
+    "typescript": "^5.5.4"
+  }
+}

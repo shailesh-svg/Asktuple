@@ -43,6 +43,12 @@ function emit(channelId: string, type: RunEvent["type"], data?: Record<string, u
   }
 }
 
+/** Point-in-time snapshot for non-SSE consumers (e.g. the Asktuple MCP server). */
+export function snapshot(channelId: string): { events: RunEvent[]; done: boolean } {
+  const ch = channels.get(channelId);
+  return ch ? { events: ch.events, done: ch.done } : { events: [], done: false };
+}
+
 /** Subscribe an HTTP response as an SSE client; replays history first. */
 export function subscribe(channelId: string, res: Response): void {
   res.writeHead(200, {
