@@ -11,6 +11,7 @@ import {
 import { getTools, refreshTools, callTool } from "./mcp.js";
 import { plan } from "./planner.js";
 import { createProposal, consumeProposal } from "./proposals.js";
+import { simulateRun, subscribe } from "./broadcast.js";
 
 /**
  * Asktuple host. One door, many capability servers.
@@ -77,12 +78,22 @@ app.post("/approve", async (req, res) => {
 
   const result = await callTool(stored.proposal.execute.toolId, stored.proposal.execute.input);
   const payload = result.payload as { ok?: boolean; note?: string };
+  const ok = payload?.ok ?? false;
+  const channel = stored.proposal.broadcastChannel ?? null;
+  // Open the broadcast so anyone (including read-only profiles) can watch.
+  // TODO(P2-real): replace simulateRun with a poller on the real run status.
+  if (ok && channel) simulateRun(channel, stored.proposal.title);
   res.json({
-    ok: payload?.ok ?? false,
+    ok,
     executed: stored.proposal.execute.toolId,
     note: payload?.note ?? "Executed.",
-    broadcastChannel: stored.proposal.broadcastChannel ?? null,
+    broadcastChannel: ok ? channel : null,
   });
+});
+
+/** Live run events (SSE). Read-only by nature; no capability gate needed. */
+app.get("/runs/:channel/events", (req, res) => {
+  subscribe(req.params.channel, res);
 });
 
 const PORT = Number(process.env.PORT ?? 8787);

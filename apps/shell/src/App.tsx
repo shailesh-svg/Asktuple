@@ -3,6 +3,7 @@ import type { DoorResponse, ProfileId, ProposedAction } from "@asktuple/contract
 import { Door } from "./door/Door.js";
 import { renderCard } from "./registry/cardRegistry.js";
 import { LiveView } from "./live/LiveView.js";
+import { LiveRun } from "./live/LiveRun.js";
 import { liveUrlAfterApproval } from "./live/liveRoutes.js";
 
 const GATEWAY = import.meta.env.VITE_ASKTUPLE_GATEWAY ?? "http://localhost:8787";
@@ -25,10 +26,12 @@ export function App() {
   const [loading, setLoading] = useState(false);
   const [liveView, setLiveView] = useState(false);
   const [liveOverride, setLiveOverride] = useState<string | null>(null);
+  const [runChannel, setRunChannel] = useState<string | null>(null);
 
   async function ask(intent: string) {
     setLoading(true);
     setLiveOverride(null); // a new intent re-points the live view by its own route
+    setRunChannel(null);
     try {
       const res = await fetch(`${GATEWAY}/door`, {
         method: "POST",
@@ -51,7 +54,10 @@ export function App() {
     if (res.status === 403) return "denied: your profile lacks this capability.";
     if (res.status === 404) return "denied: this proposal expired or was already used. Ask again to get a fresh one.";
     const data = await res.json().catch(() => ({}));
-    if (data.ok) setLiveOverride(liveUrlAfterApproval()); // show where the work landed
+    if (data.ok) {
+      setLiveOverride(liveUrlAfterApproval()); // show where the work landed
+      if (data.broadcastChannel) setRunChannel(data.broadcastChannel); // open the live stream
+    }
     return data.note ?? (data.ok ? "Executed." : "Could not execute.");
   }
 
@@ -103,6 +109,7 @@ export function App() {
         {response ? (
           <>
             {renderCard(response.result, { onAsk: ask, onApprove: approve })}
+            {runChannel && <LiveRun gateway={GATEWAY} channel={runChannel} />}
             <Trace response={response} />
             {liveView && <LiveView resolvedToolId={response.resolvedToolId} overrideUrl={liveOverride} />}
           </>
